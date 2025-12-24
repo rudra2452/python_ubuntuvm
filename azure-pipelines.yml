@@ -1,27 +1,48 @@
-steps:
-  - script: |
-      python3 -m venv venv
-      source venv/bin/activate
-      pip install --upgrade pip
-      pip install -r requirements.txt
-    displayName: 'Install dependencies'
+# azure-pipelines.yml
+trigger:
+  branches:
+    include:
+      - main   # adjust if you want 'testing' branch instead
 
+pool:
+  name: 'Default'   # your agent pool
+  demands:
+    - agent.name -equals PREM-Ubuntu   # ensure it runs on your self-hosted agent
+
+steps:
+  # Install dependencies locally on the agent (optional, for testing)
+  - script: |
+      python3 --version
+      pip3 --version
+    displayName: 'Check Python version on agent'
+
+  # Copy project files from pipeline to VM
   - task: CopyFilesOverSSH@0
     inputs:
-      sshEndpoint: 'MyUbuntuVM'
+      sshEndpoint: 'MyUbuntuVM'        # must match the SSH service connection name
       sourceFolder: '$(Build.SourcesDirectory)'
-      targetFolder: '/var/www/myapp'
+      targetFolder: '/var/www/myapp'   # your chosen hosting directory
       overwrite: true
     displayName: 'Copy files to /var/www/myapp'
 
+  # Run commands inside the VM to set up and restart Flask app
   - task: SSH@0
     inputs:
       sshEndpoint: 'MyUbuntuVM'
       runOptions: 'inline'
       inline: |
         cd /var/www/myapp
-        source venv/bin/activate || python3 -m venv venv && source venv/bin/activate
+        # Create or activate virtual environment
+        if [ ! -d "venv" ]; then
+          python3 -m venv venv
+        fi
+        source venv/bin/activate
+        pip install --upgrade pip
         pip install -r requirements.txt
+
+        # Stop any running Flask app
         pkill -f "python app.py" || true
+
+        # Restart Flask app
         nohup python app.py > app.log 2>&1 &
-    displayName: 'Restart Flask app on VM'
+    displayName: 'Deploy and restart Flask app on VM'
